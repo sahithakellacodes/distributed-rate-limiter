@@ -8,10 +8,10 @@ import (
 //
 // AuthStrategy produces this result and AuthMiddleware consumes it.
 // It is NOT the HTTP response returned to the client.
+// Never return API keys or other sensitive information in this struct.
 type AuthResult struct {
 	Authenticated bool
 	ClientID       string
-	APIKey         string
 	FailureReason  string
 }
 

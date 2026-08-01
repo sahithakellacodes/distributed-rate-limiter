@@ -22,7 +22,6 @@ func (a *APIKeyAuthStrategy) Authenticate(
 	if apiKey == "" {
 		return AuthResult{
 			Authenticated: false,
-			APIKey:        "",
 			FailureReason: "missing API key",
 		}
 	}
@@ -31,7 +30,6 @@ func (a *APIKeyAuthStrategy) Authenticate(
 	if !found {
 		return AuthResult{
 			Authenticated: false,
-			APIKey:        apiKey,
 			FailureReason: "invalid API key",
 		}
 	}
@@ -39,6 +37,5 @@ func (a *APIKeyAuthStrategy) Authenticate(
 	return AuthResult{
 		Authenticated: true,
 		ClientID:      clientID,
-		APIKey:        apiKey,
 	}
 }

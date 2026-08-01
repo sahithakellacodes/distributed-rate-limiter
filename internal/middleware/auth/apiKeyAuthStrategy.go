@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
 )
 

@@ -8,6 +8,7 @@ import (
 	requestcontext "github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/auth"
+	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/logger"
 )
 
 func main() {
@@ -16,12 +17,17 @@ func main() {
 
 	// Create middleware strategies
 	authStrategy := auth.NewAPIKeyAuthStrategy(authStore)
+	loggerStrategy := logger.NewDefaultLoggerStrategy()
 
 	// Create middlewares
 	authMiddleware := auth.NewAuthMiddleware(authStrategy)
+	loggerMiddleware := logger.NewLoggerMiddleware(loggerStrategy)
 
 	// Create middleware chain
-	chain := middleware.NewDefaultMiddlewareChain([]middleware.Middleware{authMiddleware})
+	chain := middleware.NewDefaultMiddlewareChain([]middleware.Middleware{
+		loggerMiddleware,
+		authMiddleware,
+	})
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)

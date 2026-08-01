@@ -19,12 +19,20 @@ func (a *APIKeyAuthStrategy) Authenticate(
 ) AuthResult {
 	apiKey := request.Headers["X-API-Key"]
 	if apiKey == "" {
-		return AuthResult{FailureReason: "missing API key"}
+		return AuthResult{
+			Authenticated: false,
+			APIKey:        "",
+			FailureReason: "missing API key",
+		}
 	}
 
 	clientID, found := a.store.GetClientID(apiKey)
 	if !found {
-		return AuthResult{FailureReason: "invalid API key"}
+		return AuthResult{
+			Authenticated: false,
+			APIKey:        apiKey,
+			FailureReason: "invalid API key",
+		}
 	}
 
 	return AuthResult{

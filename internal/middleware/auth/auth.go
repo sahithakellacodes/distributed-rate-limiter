@@ -17,9 +17,6 @@ type AuthResult struct {
 
 // AuthStrategy defines how a request is authenticated.
 //
-// A concrete implementation, such as APIKeyAuthStrategy or DumbAuthStrategy, 
-// will implement this interface and will receive an AuthStore when it is constructed.
-//
 // This keeps the authentication algorithm separate from the storage mechanism.
 type AuthStrategy interface {
 	Authenticate(request *context.RequestContext) AuthResult

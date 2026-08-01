@@ -1,5 +1,10 @@
 package auth
 
+/*
+* InMemoryAuthStore is a simple in-memory implementation of the AuthStore interface.
+* Intended for testing and development purposes.
+ */
+
 type InMemoryAuthStore struct {
 	clients map[string]string
 }

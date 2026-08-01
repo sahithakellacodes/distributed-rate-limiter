@@ -11,9 +11,16 @@ import (
 )
 
 func main() {
+	// Create auth store
 	authStore := auth.NewInMemoryAuthStore()
+
+	// Create middleware strategies
 	authStrategy := auth.NewAPIKeyAuthStrategy(authStore)
+
+	// Create middlewares
 	authMiddleware := auth.NewAuthMiddleware(authStrategy)
+
+	// Create middleware chain
 	chain := middleware.NewDefaultMiddlewareChain([]middleware.Middleware{authMiddleware})
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -23,6 +30,9 @@ func main() {
 			return
 		}
 
+		// Build request context
+		// Keep only the first value for each header
+		// RequestContext intentionally supports single-value headers only
 		headers := make(map[string]string, len(r.Header))
 		for name, values := range r.Header {
 			if len(values) > 0 {
@@ -36,9 +46,12 @@ func main() {
 			Headers: headers,
 			Body:    body,
 		}
-		response := &requestcontext.ResponseContext{Headers: make(map[string]string)}
-		chain.Next(request, response)
 
+		// Build response context and execute the middleware chain
+		response := &requestcontext.ResponseContext{Headers: make(map[string]string)}
+		chain.Execute(request, response)
+
+		// Copy response headers and status code to the actual HTTP response
 		for name, value := range response.Headers {
 			w.Header().Set(name, value)
 		}

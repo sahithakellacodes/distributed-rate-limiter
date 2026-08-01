@@ -12,7 +12,7 @@ func NewDefaultMiddlewareChain(middlewares []Middleware) *DefaultMiddlewareChain
 	return &DefaultMiddlewareChain{middlewares: middlewares}
 }
 
-func (c *DefaultMiddlewareChain) Next(
+func (c *DefaultMiddlewareChain) Execute(
 	request *context.RequestContext,
 	response *context.ResponseContext,
 ) {

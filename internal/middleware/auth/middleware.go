@@ -5,14 +5,15 @@ import (
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware"
 )
 
-
-// AuthMiddleware integrates authentication into the middleware chain.
-//
-// It does NOT know how authentication works.
-// It delegates that responsibility to AuthStrategy.
-//
-// This means AuthMiddleware doesn't know about Redis, API-key lookup,
-// or any other authentication implementation detail.
+/*
+* AuthMiddleware integrates authentication into the middleware chain.
+*
+* It does NOT know how authentication works.
+* It delegates that responsibility to AuthStrategy.
+*
+* This means AuthMiddleware doesn't know about Redis, API-key lookup,
+* or any other authentication implementation detail.
+ */
 type AuthMiddleware struct {
 	strategy AuthStrategy
 }
@@ -23,15 +24,17 @@ func NewAuthMiddleware(strategy AuthStrategy) *AuthMiddleware {
 	}
 }
 
+/*
 // Handle authenticates the request using the configured strategy.
-//
-// If authentication fails:
-//   - write an unauthorized response
-//   - stop the middleware chain
-//
-// If authentication succeeds:
-//   - enrich RequestContext with ClientID
-//   - continue to the next middleware
+*
+* If authentication fails:
+*   - write an unauthorized response
+*   - stop the middleware chain
+*
+* If authentication succeeds:
+*   - enrich RequestContext with ClientID
+*   - continue to the next middleware
+*/
 func (a *AuthMiddleware) Handle(
 	request *context.RequestContext,
 	response *context.ResponseContext,

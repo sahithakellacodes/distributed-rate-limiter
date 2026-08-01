@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
 )
 
@@ -17,7 +18,7 @@ func NewAPIKeyAuthStrategy(store AuthStore) *APIKeyAuthStrategy {
 func (a *APIKeyAuthStrategy) Authenticate(
 	request *context.RequestContext,
 ) AuthResult {
-	apiKey := request.Headers["X-API-Key"]
+	apiKey := request.Headers[http.CanonicalHeaderKey("X-API-Key")]
 	if apiKey == "" {
 		return AuthResult{
 			Authenticated: false,

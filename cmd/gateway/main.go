@@ -32,7 +32,7 @@ func main() {
 	authMiddleware := auth.NewAuthMiddleware(authStrategy)
 	loggerMiddleware := logger.NewLoggerMiddleware(loggerStrategy)
 	routerMiddleware := router.NewRouterMiddleware(httpClient, cfg.BackendBaseURL, cfg.AllowedPaths)
-
+	
 	// Create middleware chain
 	chain := middleware.NewDefaultMiddlewareChain([]middleware.Middleware{
 		loggerMiddleware,

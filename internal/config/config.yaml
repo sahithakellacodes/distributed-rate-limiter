@@ -1,4 +1,4 @@
-backendBaseURL: "http://backend-service:8080"
+backendBaseURL: "http://backend:8081"
 
 allowedPaths:
   - "/products"

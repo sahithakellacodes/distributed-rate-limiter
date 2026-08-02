@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/config"
 	requestcontext "github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
@@ -20,6 +21,12 @@ func main() {
 		panic(err)
 	}
 
+	cfg.BackendBaseURL = os.Getenv("BACKEND_BASE_URL")
+
+	if cfg.BackendBaseURL == "" {
+		panic("BACKEND_BASE_URL is not set")
+	}
+
 	// Create auth store
 	authStore := auth.NewInMemoryAuthStore()
 
@@ -32,7 +39,7 @@ func main() {
 	authMiddleware := auth.NewAuthMiddleware(authStrategy)
 	loggerMiddleware := logger.NewLoggerMiddleware(loggerStrategy)
 	routerMiddleware := router.NewRouterMiddleware(httpClient, cfg.BackendBaseURL, cfg.AllowedPaths)
-	
+
 	// Create middleware chain
 	chain := middleware.NewDefaultMiddlewareChain([]middleware.Middleware{
 		loggerMiddleware,

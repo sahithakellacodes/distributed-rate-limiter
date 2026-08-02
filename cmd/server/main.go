@@ -5,31 +5,42 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/sahithakellacodes/distributed-rate-limiter/internal/config"
 	requestcontext "github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/auth"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/logger"
+	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/router"
 )
 
 func main() {
+	// Load configuration
+	cfg, err := config.Load("internal/config/config.yaml")
+	if err != nil {
+		panic(err)
+	}
+
 	// Create auth store
 	authStore := auth.NewInMemoryAuthStore()
 
 	// Create middleware strategies
 	authStrategy := auth.NewAPIKeyAuthStrategy(authStore)
 	loggerStrategy := logger.NewDefaultLoggerStrategy()
+	httpClient := router.NewDefaultHttpClient(loggerStrategy)
 
 	// Create middlewares
 	authMiddleware := auth.NewAuthMiddleware(authStrategy)
 	loggerMiddleware := logger.NewLoggerMiddleware(loggerStrategy)
+	routerMiddleware := router.NewRouterMiddleware(httpClient, cfg.BackendBaseURL, cfg.AllowedPaths)
 
 	// Create middleware chain
 	chain := middleware.NewDefaultMiddlewareChain([]middleware.Middleware{
 		loggerMiddleware,
 		authMiddleware,
+		routerMiddleware,
 	})
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, "failed to read request body", http.StatusBadRequest)
@@ -70,7 +81,7 @@ func main() {
 
 	fmt.Println("Gateway listening on :8080")
 
-	err := http.ListenAndServe(":8080", nil)
+	err = http.ListenAndServe(":8080", nil)
 	if err != nil {
 		panic(err)
 	}

@@ -10,9 +10,9 @@ import (
 // RouterMiddleware checks whether the requested path is allowed
 // and forwards allowed requests to the configured backend service.
 type RouterMiddleware struct {
-	httpClient      HttpClient
-	backendBaseURL  string
-	allowedPaths    []string
+	httpClient     HttpClient
+	backendBaseURL string
+	allowedPaths   []string
 }
 
 // NewRouterMiddleware creates a new instance of RouterMiddleware.
@@ -56,8 +56,8 @@ func (r *RouterMiddleware) Handle(
 	response.Headers = backendResponse.Headers
 	response.Body = backendResponse.Body
 
-	// Router is terminal middleware.
-	// It does not call chain.Next().
+	// RouterMiddleware is terminal middleware.
+	// It does not invoke chain.Next().
 }
 
 // isPathAllowed checks if the requested path is in the list of allowed paths.

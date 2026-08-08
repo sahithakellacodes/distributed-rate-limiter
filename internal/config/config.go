@@ -7,7 +7,6 @@ import (
 )
 
 type Config struct {
-	BackendBaseURL string   `yaml:"backendBaseURL"`
 	AllowedPaths   []string `yaml:"allowedPaths"`
 }
 

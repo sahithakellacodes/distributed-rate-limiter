@@ -21,9 +21,9 @@ func main() {
 		panic(err)
 	}
 
-	cfg.BackendBaseURL = os.Getenv("BACKEND_BASE_URL")
+	backendBaseURL := os.Getenv("BACKEND_BASE_URL")
 
-	if cfg.BackendBaseURL == "" {
+	if backendBaseURL == "" {
 		panic("BACKEND_BASE_URL is not set")
 	}
 
@@ -33,12 +33,12 @@ func main() {
 	// Create middleware strategies
 	authStrategy := auth.NewAPIKeyAuthStrategy(authStore)
 	loggerStrategy := logger.NewDefaultLoggerStrategy()
-	httpClient := router.NewDefaultHttpClient(loggerStrategy)
+	httpClient := router.NewDefaultHttpClient()
 
 	// Create middlewares
 	authMiddleware := auth.NewAuthMiddleware(authStrategy)
 	loggerMiddleware := logger.NewLoggerMiddleware(loggerStrategy)
-	routerMiddleware := router.NewRouterMiddleware(httpClient, cfg.BackendBaseURL, cfg.AllowedPaths)
+	routerMiddleware := router.NewRouterMiddleware(httpClient, backendBaseURL, cfg.AllowedPaths)
 
 	// Create middleware chain
 	chain := middleware.NewDefaultMiddlewareChain([]middleware.Middleware{
@@ -55,8 +55,9 @@ func main() {
 		}
 
 		// Build request context
-		// Keep only the first value for each header
-		// RequestContext intentionally supports single-value headers only
+		// RequestContext stores only the first value of each HTTP header.
+		// This is a deliberate simplification for this project and does not
+		// preserve the full HTTP header representation.
 		headers := make(map[string]string, len(r.Header))
 		for name, values := range r.Header {
 			if len(values) > 0 {

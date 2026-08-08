@@ -8,18 +8,15 @@ import (
 	"strings"
 
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
-	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/logger"
 )
 
 type DefaultHttpClient struct {
 	client *http.Client
-	logger logger.LoggerStrategy
 }
 
-func NewDefaultHttpClient(logger logger.LoggerStrategy) *DefaultHttpClient {
+func NewDefaultHttpClient() *DefaultHttpClient {
 	return &DefaultHttpClient{
 		client: &http.Client{},
-		logger: logger,
 	}
 }
 

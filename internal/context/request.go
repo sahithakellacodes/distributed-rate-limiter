@@ -9,6 +9,5 @@ type RequestContext struct {
 	Headers map[string]string
 	Body    []byte
 
-	ClientID      string
-	ResolvedRoute string
+	ClientID string
 }

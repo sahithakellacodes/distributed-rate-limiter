@@ -17,5 +17,6 @@ type RateLimitResult struct {
 // RateLimitStrategy defines the interface for rate limiting strategies.
 type RateLimitStrategy interface {
 	// Check checks if a request is allowed based on the rate limit configuration.
+	// identifier is a unique identifier for the client. In this case it is same as clientID in authentication middleware.
 	Check(identifier string, config RateLimitConfig) RateLimitResult
 }

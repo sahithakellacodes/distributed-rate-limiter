@@ -3,15 +3,15 @@ package ratelimit
 import "time"
 
 type RateLimitConfig struct {
-	MaxRequestsPerMinute int
-	WindowSizeInSeconds  time.Duration
+	MaxRequestsPerWindow int           // Maximum number of requests allowed in the specified window
+	WindowSizeInSeconds  time.Duration // Duration of the time window for rate limiting
 }
 
 type RateLimitResult struct {
-	Allowed           bool
-	Remaining         int
-	ResetTimestamp    time.Time // Epoch timestamp when the rate limit will reset
-	RetryAfterSeconds int
+	Allowed           bool  // Whether the request is allowed or not
+	Remaining         int   // Remaining number of requests allowed in the current window
+	ResetTimestamp    int64 // Epoch timestamp when the rate limit will reset
+	RetryAfterSeconds int   // Number of seconds to wait before making the next request if the limit is exceeded
 }
 
 // RateLimitStrategy defines the interface for rate limiting strategies.

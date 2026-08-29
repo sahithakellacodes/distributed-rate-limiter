@@ -10,7 +10,6 @@ type RateLimitConfig struct {
 type RateLimitResult struct {
 	Allowed           bool  // Whether the request is allowed or not
 	Remaining         int   // Remaining number of requests allowed in the current window
-	ResetTimestamp    int64 // Epoch timestamp when the rate limit will reset
 	RetryAfterSeconds int   // Number of seconds to wait before making the next request if the limit is exceeded
 }
 

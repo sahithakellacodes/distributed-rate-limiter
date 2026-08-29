@@ -49,19 +49,15 @@ func (s *LocalTokenBucketStrategy) Check(identifier string, config RateLimitConf
 	bucket.lastRefill = now
 
 	result := RateLimitResult{
-		ResetTimestamp: now.Add(config.WindowSizeInSeconds).Unix(),
+		Remaining: int(math.Floor(bucket.tokens)),
 	}
 	if bucket.tokens >= 1 {
 		bucket.tokens--
 		result.Allowed = true
 	} else {
 		secondsUntilNextToken := (1 - bucket.tokens) / refillRate
-		timeUntilNextToken := time.Duration(secondsUntilNextToken * float64(time.Second))
-
-		result.ResetTimestamp = int64(math.Ceil(float64(now.Add(timeUntilNextToken).UnixNano()) / float64(time.Second))) // Epoch seconds, rounded up to avoid premature retries.
 		result.RetryAfterSeconds = int(math.Ceil(secondsUntilNextToken))
 	}
-	result.Remaining = int(math.Floor(bucket.tokens))
 
 	return result
 }

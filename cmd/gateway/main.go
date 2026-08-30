@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/logger"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/ratelimit"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/router"
+	"github.com/sahithakellacodes/distributed-rate-limiter/internal/redis"
 )
 
 func main() {
@@ -24,10 +26,25 @@ func main() {
 	}
 
 	backendBaseURL := os.Getenv("BACKEND_BASE_URL")
+	redisAddr := os.Getenv("REDIS_ADDR")
 
 	if backendBaseURL == "" {
 		panic("BACKEND_BASE_URL is not set")
 	}
+
+	if redisAddr == "" {
+		panic("redisAddr is not set")
+	}
+
+	redisClient := redis.NewClient(redisAddr)
+
+	ctx := context.Background()
+
+	if err := redisClient.Ping(ctx); err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Connected to Redis")
 
 	// Create auth store
 	authStore := auth.NewInMemoryAuthStore()

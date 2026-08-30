@@ -53,7 +53,9 @@ func (r *RouterMiddleware) Handle(
 	}
 
 	response.StatusCode = backendResponse.StatusCode
-	response.Headers = backendResponse.Headers
+	for name, value := range backendResponse.Headers {
+		response.Headers[name] = value
+	}
 	response.Body = backendResponse.Body
 
 	// RouterMiddleware is terminal middleware.

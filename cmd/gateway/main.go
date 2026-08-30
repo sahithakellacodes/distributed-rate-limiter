@@ -5,12 +5,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/config"
 	requestcontext "github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/auth"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/logger"
+	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/ratelimit"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/router"
 )
 
@@ -30,20 +32,29 @@ func main() {
 	// Create auth store
 	authStore := auth.NewInMemoryAuthStore()
 
+	// Create RateLimitConfig
+	rateLimitConfig := ratelimit.RateLimitConfig{
+		MaxRequestsPerWindow: 40,
+		WindowSizeInSeconds:  60 * time.Second,
+	}
+
 	// Create middleware strategies
 	authStrategy := auth.NewAPIKeyAuthStrategy(authStore)
 	loggerStrategy := logger.NewDefaultLoggerStrategy()
+	rateLimitStrategy := ratelimit.NewLocalTokenBucketStrategy()
 	httpClient := router.NewDefaultHttpClient()
 
 	// Create middlewares
 	authMiddleware := auth.NewAuthMiddleware(authStrategy)
 	loggerMiddleware := logger.NewLoggerMiddleware(loggerStrategy)
+	rateLimitMiddleware := ratelimit.NewRateLimiterMiddleware(rateLimitStrategy, rateLimitConfig)
 	routerMiddleware := router.NewRouterMiddleware(httpClient, backendBaseURL, cfg.AllowedPaths)
 
 	// Create middleware chain
 	chain := middleware.NewDefaultMiddlewareChain([]middleware.Middleware{
 		loggerMiddleware,
 		authMiddleware,
+		rateLimitMiddleware,
 		routerMiddleware,
 	})
 

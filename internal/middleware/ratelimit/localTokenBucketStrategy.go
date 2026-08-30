@@ -51,8 +51,9 @@ func (s *LocalTokenBucketStrategy) Check(identifier string, config RateLimitConf
 	result := RateLimitResult{
 		Remaining: int(math.Floor(bucket.tokens)),
 	}
-	if bucket.tokens >= 1 {
+	if bucket.tokens >= 1-tokenEpsilon {
 		bucket.tokens--
+		bucket.tokens = math.Max(0, bucket.tokens) // Clamp after decrement
 		result.Allowed = true
 	} else {
 		secondsUntilNextToken := (1 - bucket.tokens) / refillRate

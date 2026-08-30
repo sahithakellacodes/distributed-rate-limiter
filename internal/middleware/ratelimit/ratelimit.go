@@ -2,6 +2,8 @@ package ratelimit
 
 import "time"
 
+const tokenEpsilon float64 = 1e-9 // Accounts for floating-point precision errors when comparing token counts.
+
 type RateLimitConfig struct {
 	MaxRequestsPerWindow int           // Maximum number of requests allowed in the specified window
 	WindowSizeInSeconds  time.Duration // Duration of the time window for rate limiting

@@ -48,6 +48,7 @@ func main() {
 	fmt.Println("Connected to Redis")
 
 	healthChecker := health.NewHealthChecker()
+	healthChecker.StartHealthChecks(ctx, redisClient)
 
 	// Create auth store
 	authStore := auth.NewInMemoryAuthStore()

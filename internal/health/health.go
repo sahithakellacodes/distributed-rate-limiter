@@ -1,7 +1,12 @@
 package health
 
 import (
+	"context"
+	"os"
 	"sync"
+	"time"
+
+	redis "github.com/sahithakellacodes/distributed-rate-limiter/internal/redis"
 )
 
 type Checker interface {
@@ -18,6 +23,41 @@ type HealthChecker struct {
 func NewHealthChecker() *HealthChecker {
 	return &HealthChecker{
 		healthy: true,
+	}
+}
+
+func (h *HealthChecker) StartHealthChecks(ctx context.Context, redisClient *redis.Client) {
+	go h.runHealthChecks(ctx, redisClient)
+}
+
+func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.Client) {
+
+	healthCheckInterval := os.Getenv("HEALTH_CHECK_INTERVAL")
+	interval, err := time.ParseDuration(healthCheckInterval)
+	if err != nil {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			err := redisClient.Ping(ctx)
+			h.mutex.Lock()
+			if err == nil {
+				h.consecutiveSuccess++
+				if h.consecutiveSuccess >= 3 {
+					h.healthy = true
+				}
+			} else {
+				h.consecutiveSuccess = 0
+				h.healthy = false
+			}
+			h.mutex.Unlock()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 

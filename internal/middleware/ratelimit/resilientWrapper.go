@@ -12,6 +12,17 @@ type ResilientWrapper struct {
 	health   health.Checker
 }
 
+func NewResilientWrapper(
+	primary RateLimitStrategy,
+	fallback RateLimitStrategy,
+	healthChecker health.Checker,
+) *ResilientWrapper {
+	return &ResilientWrapper{
+		primary:  primary,
+		fallback: fallback,
+		health:   healthChecker,
+	}
+}
 
 func (w *ResilientWrapper) Check(
 	ctx context.Context,
@@ -23,7 +34,7 @@ func (w *ResilientWrapper) Check(
 		if err == nil {
 			return res, nil
 		}
-		w.health.ReportFailure()                     // accelerate failure detection
+		w.health.ReportFailure()                         // accelerate failure detection
 		return w.fallback.Check(ctx, identifier, config) // degrade this request to local
 	}
 	return w.fallback.Check(ctx, identifier, config)

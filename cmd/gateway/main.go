@@ -10,6 +10,7 @@ import (
 
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/config"
 	requestcontext "github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
+	"github.com/sahithakellacodes/distributed-rate-limiter/internal/health"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/auth"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/logger"
@@ -46,19 +47,23 @@ func main() {
 
 	fmt.Println("Connected to Redis")
 
+	healthChecker := health.NewHealthChecker()
+
 	// Create auth store
 	authStore := auth.NewInMemoryAuthStore()
 
 	// Create RateLimitConfig
 	rateLimitConfig := ratelimit.RateLimitConfig{
 		MaxRequestsPerWindow: 40,
-		WindowSize:  60 * time.Second,
+		WindowSize:           60 * time.Second,
 	}
 
 	// Create middleware strategies
 	authStrategy := auth.NewAPIKeyAuthStrategy(authStore)
 	loggerStrategy := logger.NewDefaultLoggerStrategy()
-	rateLimitStrategy := ratelimit.NewLocalTokenBucketStrategy()
+	localTokenBucketStrategy := ratelimit.NewLocalTokenBucketStrategy()
+	redisTokenBucketStrategy := ratelimit.NewRedisTokenBucketStrategy(redisClient)
+	rateLimitStrategy := ratelimit.NewResilientWrapper(redisTokenBucketStrategy, localTokenBucketStrategy, healthChecker)
 	httpClient := router.NewDefaultHttpClient()
 
 	// Create middlewares

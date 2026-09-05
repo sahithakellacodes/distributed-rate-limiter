@@ -38,7 +38,7 @@ func (s *LocalTokenBucketStrategy) Check(identifier string, config RateLimitConf
 		s.buckets[identifier] = bucket
 	}
 
-	refillRate := float64(config.MaxRequestsPerWindow) / config.WindowSizeInSeconds.Seconds()
+	refillRate := float64(config.MaxRequestsPerWindow) / config.WindowSize.Seconds()
 	elapsed := now.Sub(bucket.lastRefill).Seconds()
 	if elapsed > 0 {
 		bucket.tokens = math.Min(

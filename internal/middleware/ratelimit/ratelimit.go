@@ -6,7 +6,7 @@ const tokenEpsilon float64 = 1e-9 // Accounts for floating-point precision error
 
 type RateLimitConfig struct {
 	MaxRequestsPerWindow int           // Maximum number of requests allowed in the specified window
-	WindowSizeInSeconds  time.Duration // Duration of the time window for rate limiting
+	WindowSize  time.Duration // Duration of the time window for rate limiting
 }
 
 type RateLimitResult struct {

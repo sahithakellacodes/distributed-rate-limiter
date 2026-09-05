@@ -52,7 +52,7 @@ func main() {
 	// Create RateLimitConfig
 	rateLimitConfig := ratelimit.RateLimitConfig{
 		MaxRequestsPerWindow: 40,
-		WindowSizeInSeconds:  60 * time.Second,
+		WindowSize:  60 * time.Second,
 	}
 
 	// Create middleware strategies

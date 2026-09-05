@@ -44,8 +44,8 @@ func (s *LocalSlidingWindowStrategy) Check(identifier string, config RateLimitCo
 
 	// Check if the current window has expired
 	timeElapsedSinceWindowStart := now.Sub(window.currentWindowStartTime)
-	if timeElapsedSinceWindowStart >= config.WindowSizeInSeconds {
-		elapsedWindows:= timeElapsedSinceWindowStart / config.WindowSizeInSeconds
+	if timeElapsedSinceWindowStart >= config.WindowSize {
+		elapsedWindows:= timeElapsedSinceWindowStart / config.WindowSize
 		if elapsedWindows >= 2 {
 			window.previousWindowCount = 0
 		} else {
@@ -53,11 +53,11 @@ func (s *LocalSlidingWindowStrategy) Check(identifier string, config RateLimitCo
 		}
 		window.currentWindowCount = 0
 		window.currentWindowStartTime = window.currentWindowStartTime.Add(
-			time.Duration(elapsedWindows) * config.WindowSizeInSeconds,
+			time.Duration(elapsedWindows) * config.WindowSize,
 		)
 	}
 
-	fractionOfPreviousWindow := 1.0 - (float64(now.Sub(window.currentWindowStartTime)) / float64(config.WindowSizeInSeconds))
+	fractionOfPreviousWindow := 1.0 - (float64(now.Sub(window.currentWindowStartTime)) / float64(config.WindowSize))
 	consumedCount := float64(window.previousWindowCount)*fractionOfPreviousWindow + float64(window.currentWindowCount)
 	remainingRequestsCount := float64(config.MaxRequestsPerWindow) - consumedCount
 
@@ -65,11 +65,11 @@ func (s *LocalSlidingWindowStrategy) Check(identifier string, config RateLimitCo
 		retryAfterSeconds := 0
 
 		if window.previousWindowCount > 0 {
-			previousWindowSeconds := config.WindowSizeInSeconds.Seconds() * fractionOfPreviousWindow
+			previousWindowSeconds := config.WindowSize.Seconds() * fractionOfPreviousWindow
 			retryAfterSeconds = int(math.Ceil(previousWindowSeconds / float64(window.previousWindowCount)))
 		} else {
 			retryAfterSeconds = int(math.Ceil(
-				window.currentWindowStartTime.Add(config.WindowSizeInSeconds).Sub(now).Seconds(),
+				window.currentWindowStartTime.Add(config.WindowSize).Sub(now).Seconds(),
 			))
 		}
 

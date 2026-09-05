@@ -2,9 +2,10 @@ package health
 
 import (
 	"context"
-	"os"
-	"sync"
 	"time"
+	"sync"
+	"os"
+	"fmt"
 
 	redis "github.com/sahithakellacodes/distributed-rate-limiter/internal/redis"
 )
@@ -30,12 +31,12 @@ func (h *HealthChecker) StartHealthChecks(ctx context.Context, redisClient *redi
 	go h.runHealthChecks(ctx, redisClient)
 }
 
-func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.Client) {
+func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.Client) error {
 
 	healthCheckInterval := os.Getenv("HEALTH_CHECK_INTERVAL")
 	interval, err := time.ParseDuration(healthCheckInterval)
 	if err != nil {
-		return
+		return fmt.Errorf("invalid HEALTH_CHECK_INTERVAL: %w", err)
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -56,7 +57,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.
 			}
 			h.mutex.Unlock()
 		case <-ctx.Done():
-			return
+			return nil
 		}
 	}
 }

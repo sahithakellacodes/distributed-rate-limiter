@@ -20,18 +20,7 @@ func NewRedisTokenBucketStrategy(client *redis.Client) *RedisTokenBucketStrategy
 	}
 }
 
-func (s *RedisTokenBucketStrategy) Check(
-	ctx context.Context,
-	identifier string,
-	config RateLimitConfig,
-) (RateLimitResult, error) {
-	redisKey := "ratelimit:tb:{" + identifier + "}"
-
-	capacity := float64(config.MaxRequestsPerWindow)
-	refillRate := capacity / float64(config.WindowSize.Nanoseconds())
-	currentTime := s.now().UnixNano()
-
-	var tokenBucketScript = redis.NewScript(`
+var tokenBucketScript = redis.NewScript(`
 		local capacity = tonumber(ARGV[1])
 		local refillRate = tonumber(ARGV[2])
 		local currentTime = tonumber(ARGV[3])
@@ -64,11 +53,22 @@ func (s *RedisTokenBucketStrategy) Check(
 		end
 	`)
 
+func (s *RedisTokenBucketStrategy) Check(
+	ctx context.Context,
+	identifier string,
+	config RateLimitConfig,
+) (RateLimitResult, error) {
+	redisKey := "ratelimit:tb:{" + identifier + "}"
+
+	capacity := float64(config.MaxRequestsPerWindow)
+	refillRate := capacity / float64(config.WindowSize.Nanoseconds())
+	currentTime := s.now().UnixNano()
+
 	// KEYS[1] = redisKey
 	// ARGV[1] = capacity
 	// ARGV[2] = refillRate
 	// ARGV[3] = currentTime
-	result, _ := s.client.RunScript(
+	result, err := s.client.RunScript(
 		ctx,
 		tokenBucketScript,
 		[]string{redisKey},
@@ -77,11 +77,13 @@ func (s *RedisTokenBucketStrategy) Check(
 		currentTime,
 	)
 
+	if err != nil {
+		return RateLimitResult{}, err
+	}
+
 	values, ok := result.([]interface{})
 	if !ok || len(values) != 3 {
-		return RateLimitResult{
-			Remaining: int(values[1].(int64)),
-		}, fmt.Errorf("unexpected Redis script result")
+		return RateLimitResult{}, fmt.Errorf("unexpected Redis script result")
 	}
 
 	return RateLimitResult{

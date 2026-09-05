@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/config"
@@ -53,9 +54,14 @@ func main() {
 	// Create auth store
 	authStore := auth.NewInMemoryAuthStore()
 
+	maxRequestsPerWindow, err := strconv.Atoi(os.Getenv("X_RATELIMIT_LIMIT"))
+	if err != nil {
+		panic(err)
+	}
+
 	// Create RateLimitConfig
 	rateLimitConfig := ratelimit.RateLimitConfig{
-		MaxRequestsPerWindow: 40,
+		MaxRequestsPerWindow: maxRequestsPerWindow,
 		WindowSize:           60 * time.Second,
 	}
 

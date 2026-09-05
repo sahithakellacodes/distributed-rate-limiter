@@ -1,10 +1,10 @@
 package ratelimit
 
 import (
-	"fmt"
+	"context"
 	"strconv"
 
-	"github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
+	rlcontext "github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware"
 )
 
@@ -21,12 +21,21 @@ func NewRateLimiterMiddleware(strategy RateLimitStrategy, config RateLimitConfig
 }
 
 func (m *RateLimiterMiddleware) Handle(
-	request *context.RequestContext,
-	response *context.ResponseContext,
+	ctx context.Context,
+	request *rlcontext.RequestContext,
+	response *rlcontext.ResponseContext,
 	chain middleware.MiddlewareChain,
 ) {
-	fmt.Println("Rate limiter activated")
-	rateLimitResult := m.strategy.Check(request.ClientID, m.config)
+	rateLimitResult, err := m.strategy.Check(ctx, request.ClientID, m.config)
+	if err != nil {
+		// Fail closed: the rate limiter could not reach its backend. The resilient
+		// wrapper never returns an error here (it degrades to local), so this path
+		// is only hit by a pure-redis strategy when redis is unreachable, which is
+		// exactly the fragility we want to surface rather than mask.
+		response.StatusCode = 503
+		response.Body = []byte("rate limiter unavailable")
+		return
+	}
 
 	if !rateLimitResult.Allowed {
 		response.StatusCode = 429
@@ -38,5 +47,5 @@ func (m *RateLimiterMiddleware) Handle(
 
 	response.Headers["X-RateLimit-Remaining"] = strconv.Itoa(rateLimitResult.Remaining)
 
-	chain.Next(request, response)
+	chain.Next(ctx, request, response)
 }

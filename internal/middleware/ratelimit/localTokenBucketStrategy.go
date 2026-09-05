@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"math"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ func NewLocalTokenBucketStrategy() *LocalTokenBucketStrategy {
 	}
 }
 
-func (s *LocalTokenBucketStrategy) Check(identifier string, config RateLimitConfig) RateLimitResult {
+func (s *LocalTokenBucketStrategy) Check(_ context.Context, identifier string, config RateLimitConfig) (RateLimitResult, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -60,5 +61,5 @@ func (s *LocalTokenBucketStrategy) Check(identifier string, config RateLimitConf
 		result.RetryAfterSeconds = int(math.Ceil(secondsUntilNextToken))
 	}
 
-	return result
+	return result, nil
 }

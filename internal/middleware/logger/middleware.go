@@ -1,6 +1,7 @@
 package logger
 
 import (
+	stdcontext "context"
 	"time"
 
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
@@ -18,6 +19,7 @@ func NewLoggerMiddleware(logger LoggerStrategy) *LoggerMiddleware {
 }
 
 func (m *LoggerMiddleware) Handle(
+	ctx stdcontext.Context,
 	request *context.RequestContext,
 	response *context.ResponseContext,
 	chain middleware.MiddlewareChain,
@@ -29,7 +31,7 @@ func (m *LoggerMiddleware) Handle(
 		"path":   request.Path,
 	})
 
-	chain.Next(request, response)
+	chain.Next(ctx, request, response)
 
 	m.logger.Info("request completed", map[string]any{
 		"method":      request.Method,

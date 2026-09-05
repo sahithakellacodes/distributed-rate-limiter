@@ -1,6 +1,10 @@
 package middleware
 
-import "github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
+import (
+	stdcontext "context"
+
+	"github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
+)
 
 // DefaultMiddlewareChain executes middleware in the order it was supplied.
 // A fresh cursor is created for every request so the chain is safe to reuse.
@@ -13,10 +17,11 @@ func NewDefaultMiddlewareChain(middlewares []Middleware) *DefaultMiddlewareChain
 }
 
 func (c *DefaultMiddlewareChain) Execute(
+	ctx stdcontext.Context,
 	request *context.RequestContext,
 	response *context.ResponseContext,
 ) {
-	(&requestMiddlewareChain{middlewares: c.middlewares}).Next(request, response)
+	(&requestMiddlewareChain{middlewares: c.middlewares}).Next(ctx, request, response)
 }
 
 type requestMiddlewareChain struct {
@@ -25,6 +30,7 @@ type requestMiddlewareChain struct {
 }
 
 func (c *requestMiddlewareChain) Next(
+	ctx stdcontext.Context,
 	request *context.RequestContext,
 	response *context.ResponseContext,
 ) {
@@ -34,5 +40,5 @@ func (c *requestMiddlewareChain) Next(
 
 	current := c.middlewares[c.index]
 	c.index++
-	current.Handle(request, response, c)
+	current.Handle(ctx, request, response, c)
 }

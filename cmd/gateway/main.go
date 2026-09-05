@@ -102,7 +102,7 @@ func main() {
 
 		// Build response context and execute the middleware chain
 		response := &requestcontext.ResponseContext{Headers: make(map[string]string)}
-		chain.Execute(request, response)
+		chain.Execute(r.Context(), request, response)
 
 		// Copy response headers and status code to the actual HTTP response
 		for name, value := range response.Headers {

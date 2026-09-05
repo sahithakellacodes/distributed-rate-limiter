@@ -1,6 +1,8 @@
 package auth
 
 import (
+	stdcontext "context"
+
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware"
 )
@@ -36,6 +38,7 @@ func NewAuthMiddleware(strategy AuthStrategy) *AuthMiddleware {
 *   - continue to the next middleware
 */
 func (a *AuthMiddleware) Handle(
+	ctx stdcontext.Context,
 	request *context.RequestContext,
 	response *context.ResponseContext,
 	chain middleware.MiddlewareChain,
@@ -49,5 +52,5 @@ func (a *AuthMiddleware) Handle(
 	}
 
 	request.ClientID = result.ClientID
-	chain.Next(request, response)
+	chain.Next(ctx, request, response)
 }

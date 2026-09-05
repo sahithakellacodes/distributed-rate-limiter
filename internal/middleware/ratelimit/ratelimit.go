@@ -1,6 +1,9 @@
 package ratelimit
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 const tokenEpsilon float64 = 1e-9 // Accounts for floating-point precision errors when comparing token counts.
 
@@ -16,8 +19,12 @@ type RateLimitResult struct {
 }
 
 // RateLimitStrategy defines the interface for rate limiting strategies.
+// 
+// ctx carries a deadline so redis-backed implementations don't hang
+// local implementations ignore it
+// error is non nil only when the backend itself fails (e.g. redis unreachable); local implementations always return nil
 type RateLimitStrategy interface {
 	// Check checks if a request is allowed based on the rate limit configuration.
 	// identifier is a unique identifier for the client. In this case it is same as clientID in authentication middleware.
-	Check(identifier string, config RateLimitConfig) RateLimitResult
+	Check(ctx context.Context, identifier string, config RateLimitConfig) (RateLimitResult, error)
 }

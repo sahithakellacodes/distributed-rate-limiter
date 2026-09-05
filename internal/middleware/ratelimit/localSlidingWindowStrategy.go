@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"math"
 	"sync"
 	"time"
@@ -25,7 +26,7 @@ func NewLocalSlidingWindowStrategy() *LocalSlidingWindowStrategy {
 	}
 }
 
-func (s *LocalSlidingWindowStrategy) Check(identifier string, config RateLimitConfig) RateLimitResult {
+func (s *LocalSlidingWindowStrategy) Check(_ context.Context, identifier string, config RateLimitConfig) (RateLimitResult, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -77,7 +78,7 @@ func (s *LocalSlidingWindowStrategy) Check(identifier string, config RateLimitCo
 			Allowed:           false,
 			Remaining:         0,
 			RetryAfterSeconds: retryAfterSeconds,
-		}
+		}, nil
 	}
 
 	window.currentWindowCount += 1
@@ -85,5 +86,5 @@ func (s *LocalSlidingWindowStrategy) Check(identifier string, config RateLimitCo
 		Allowed:           true,
 		Remaining:         int(math.Floor(remainingRequestsCount + tokenEpsilon)) - 1,
 		RetryAfterSeconds: 0,
-	}
+	}, nil
 }

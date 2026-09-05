@@ -1,6 +1,7 @@
 package router
 
 import (
+	stdcontext "context"
 	"strings"
 
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
@@ -31,6 +32,7 @@ func NewRouterMiddleware(
 // Handle processes the incoming request, checks if the path is allowed,
 // forwards it to the backend if allowed, and populates the response context.
 func (r *RouterMiddleware) Handle(
+	_ stdcontext.Context,
 	request *context.RequestContext,
 	response *context.ResponseContext,
 	chain middleware.MiddlewareChain,

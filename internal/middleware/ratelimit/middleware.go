@@ -36,16 +36,17 @@ func (m *RateLimiterMiddleware) Handle(
 		response.Body = []byte("rate limiter unavailable")
 		return
 	}
+	
+	response.Headers["X-RateLimit-Remaining"] = strconv.Itoa(rateLimitResult.Remaining)
+	response.Headers["X-RateLimit-Limit"] = strconv.Itoa(m.config.MaxRequestsPerWindow)
+	// TODO: Write X-RateLimit-Reset
 
 	if !rateLimitResult.Allowed {
 		response.StatusCode = 429
-		response.Headers["X-RateLimit-Remaining"] = strconv.Itoa(rateLimitResult.Remaining)
 		response.Headers["Retry-After"] = strconv.Itoa(rateLimitResult.RetryAfterSeconds)
 		response.Body = []byte("Rate limit exceeded!")
 		return
 	}
-
-	response.Headers["X-RateLimit-Remaining"] = strconv.Itoa(rateLimitResult.Remaining)
 
 	chain.Next(ctx, request, response)
 }

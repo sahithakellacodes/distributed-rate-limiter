@@ -13,7 +13,8 @@ services:
     environment:
       - BACKEND_BASE_URL=http://backend:8081
       - REDIS_ADDR=redis:6379
-      - HEALTH_CHECK_INTERVAL=2s
+      - HEALTH_CHECK_INTERVAL=3s
+      - HEALTH_CHECK_CONSECUTIVE_POSITIVE=3
       - X_RATELIMIT_LIMIT=5
 
   backend:

@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"strconv"
 	"time"
 	"sync"
 	"os"
@@ -38,6 +39,11 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.
 	if err != nil {
 		return fmt.Errorf("invalid HEALTH_CHECK_INTERVAL: %w", err)
 	}
+	consecutiveSuccessRequired, err := strconv.Atoi(os.Getenv("HEALTH_CHECK_CONSECUTIVE_POSITIVE"))
+	if err != nil {
+		return fmt.Errorf("invalid HEALTH_CHECK_CONSECUTIVE_POSITIVE: %w", err)
+	}
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -48,7 +54,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.
 			h.mutex.Lock()
 			if err == nil {
 				h.consecutiveSuccess++
-				if h.consecutiveSuccess >= 3 {
+				if h.consecutiveSuccess >= consecutiveSuccessRequired {
 					h.healthy = true
 				}
 			} else {

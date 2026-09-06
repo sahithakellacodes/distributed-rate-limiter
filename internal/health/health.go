@@ -2,10 +2,8 @@ package health
 
 import (
 	"context"
-	"strconv"
 	"time"
 	"sync"
-	"math"
 
 	redis "github.com/sahithakellacodes/distributed-rate-limiter/internal/redis"
 )
@@ -48,7 +46,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.
 			err := redisClient.Ping(ctx)
 			h.mutex.Lock()
 			if err == nil {
-				h.consecutiveSuccess = math.min(h.consecutiveSuccess + 1, h.consecutiveSuccessRequired)
+				h.consecutiveSuccess = min(h.consecutiveSuccess + 1, h.consecutiveSuccessRequired)
 				if h.consecutiveSuccess >= h.consecutiveSuccessRequired {
 					h.healthy = true
 				}

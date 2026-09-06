@@ -88,6 +88,8 @@ func TestRedisTokenBucketStrategy_Concurrent(t *testing.T) {
 		}
 	}
 
+	t.Logf("allowed=%d denied=%d failed=%d (limit=%d, N=%d)", allowedCount, deniedCount, failedCount, limit, N)
+
 	if failedCount > 0 {
 		t.Fatalf("Check returned errors for %d of %d requests", failedCount, N)
 	}

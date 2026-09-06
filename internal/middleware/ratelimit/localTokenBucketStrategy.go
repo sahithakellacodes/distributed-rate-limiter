@@ -25,6 +25,7 @@ func NewLocalTokenBucketStrategy() *LocalTokenBucketStrategy {
 	}
 }
 
+// TODO: Local memory might need cleanup either using a goroutine or on recovery
 func (s *LocalTokenBucketStrategy) Check(_ context.Context, identifier string, config RateLimitConfig) (RateLimitResult, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()

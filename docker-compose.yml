@@ -1,10 +1,46 @@
 services:
-  gateway:
+  gateway-1:
     build:
       context: .
       target: gateway
     ports:
       - "8080:8080"
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      - BACKEND_BASE_URL=http://backend:8081
+      - REDIS_ADDR=redis:6379
+      - HEALTH_CHECK_INTERVAL=3s
+      - HEALTH_CHECK_CONSECUTIVE_POSITIVE=3
+      - X_RATELIMIT_LIMIT=5
+
+  gateway-2:
+    build:
+      context: .
+      target: gateway
+    ports:
+      - "8082:8080"
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      - BACKEND_BASE_URL=http://backend:8081
+      - REDIS_ADDR=redis:6379
+      - HEALTH_CHECK_INTERVAL=3s
+      - HEALTH_CHECK_CONSECUTIVE_POSITIVE=3
+      - X_RATELIMIT_LIMIT=5
+
+  gateway-3:
+    build:
+      context: .
+      target: gateway
+    ports:
+      - "8083:8080"
     depends_on:
       backend:
         condition: service_started

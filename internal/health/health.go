@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"time"
 	"sync"
-	"os"
-	"fmt"
 
 	redis "github.com/sahithakellacodes/distributed-rate-limiter/internal/redis"
 )
+
+// Health checker follows a fast-down, slow-up mechanism  
 
 type Checker interface {
 	IsHealthy() bool
@@ -20,11 +20,15 @@ type HealthChecker struct {
 	mutex              sync.Mutex
 	healthy            bool // Gives information if service is healthy.
 	consecutiveSuccess int  // Used to check number of consecutive success pings. This will help determine if we want to switch back to online service. Useful to prevent flapping.
+	interval		   time.Duration
+	consecutiveSuccessRequired int
 }
 
-func NewHealthChecker() *HealthChecker {
+func NewHealthChecker(interval time.Duration, consecutiveSuccessRequired int) *HealthChecker {
 	return &HealthChecker{
 		healthy: true,
+		interval: interval,
+		consecutiveSuccessRequired: consecutiveSuccessRequired,
 	}
 }
 
@@ -32,19 +36,9 @@ func (h *HealthChecker) StartHealthChecks(ctx context.Context, redisClient *redi
 	go h.runHealthChecks(ctx, redisClient)
 }
 
+// Might need to return func(...)
 func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.Client) error {
-
-	healthCheckInterval := os.Getenv("HEALTH_CHECK_INTERVAL")
-	interval, err := time.ParseDuration(healthCheckInterval)
-	if err != nil {
-		return fmt.Errorf("invalid HEALTH_CHECK_INTERVAL: %w", err)
-	}
-	consecutiveSuccessRequired, err := strconv.Atoi(os.Getenv("HEALTH_CHECK_CONSECUTIVE_POSITIVE"))
-	if err != nil {
-		return fmt.Errorf("invalid HEALTH_CHECK_CONSECUTIVE_POSITIVE: %w", err)
-	}
-
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(h.interval)
 	defer ticker.Stop()
 
 	for {
@@ -54,7 +48,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context, redisClient *redis.
 			h.mutex.Lock()
 			if err == nil {
 				h.consecutiveSuccess++
-				if h.consecutiveSuccess >= consecutiveSuccessRequired {
+				if h.consecutiveSuccess >= h.consecutiveSuccessRequired {
 					h.healthy = true
 				}
 			} else {

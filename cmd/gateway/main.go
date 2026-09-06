@@ -1,13 +1,15 @@
 package main
 
 import (
+	"os/signal"
+	"net/http"
 	"context"
+	"strconv"
+	"syscall"
+	"time"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"strconv"
-	"time"
 
 	"github.com/sahithakellacodes/distributed-rate-limiter/internal/config"
 	requestcontext "github.com/sahithakellacodes/distributed-rate-limiter/internal/context"
@@ -27,20 +29,45 @@ func main() {
 		panic(err)
 	}
 
+	// Load ENV
 	backendBaseURL := os.Getenv("BACKEND_BASE_URL")
 	redisAddr := os.Getenv("REDIS_ADDR")
+	healthCheckInterval := os.Getenv("HEALTH_CHECK_INTERVAL")
+	healthCheckConsecutivePositive := os.Getenv("HEALTH_CHECK_CONSECUTIVE_POSITIVE")
 
 	if backendBaseURL == "" {
 		panic("BACKEND_BASE_URL is not set")
 	}
 
 	if redisAddr == "" {
-		panic("redisAddr is not set")
+		panic("REDIS_ADDR is not set")
 	}
 
-	redisClient := redis.NewClient(redisAddr)
+	if healthCheckInterval == "" {
+		panic("HEALTH_CHECK_INTERVAL is not set")
+	}
 
-	ctx := context.Background()
+	if healthCheckConsecutivePositive == "" {
+		panic("HEALTH_CHECK_CONSECUTIVE_POSITIVE is not set")
+	}
+
+	interval, err := time.ParseDuration(healthCheckInterval)
+	if err != nil {
+		panic("invalid HEALTH_CHECK_INTERVAL")
+	}
+
+	consecutiveSuccessRequired, err := strconv.Atoi(healthCheckConsecutivePositive)
+	if err != nil {
+		panic("invalid HEALTH_CHECK_CONSECUTIVE_POSITIVE")
+	}
+
+	// One context for the whole process, cancelled on SIGINT/SIGTERM.
+	// Context used by both redis and health checks
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Add new Redis client
+	redisClient := redis.NewClient(redisAddr)
 
 	if err := redisClient.Ping(ctx); err != nil {
 		panic(err)
@@ -48,7 +75,8 @@ func main() {
 
 	fmt.Println("Connected to Redis")
 
-	healthChecker := health.NewHealthChecker()
+	// Run health check goroutine
+	healthChecker := health.NewHealthChecker(interval, consecutiveSuccessRequired)
 	healthChecker.StartHealthChecks(ctx, redisClient)
 
 	// Create auth store
@@ -128,6 +156,19 @@ func main() {
 	})
 
 	fmt.Println("Gateway listening on :8080")
+
+	// TODO: Add graceful shutdown
+
+	// Currently the process relies on the OS to kill it on SIGINT/SIGTERM.
+	// The signal-cancelled ctx stops the health-check goroutine cleanly, but
+	// http.ListenAndServe blocks here and never returns, so in-flight requests
+	// are severed when the process dies rather than being drained.
+
+	// This is acceptable for now (Redis holds all rate-limit state, and the
+	// atomic Lua operations either complete or don't, so a dropped connection
+	// causes no corruption). It becomes necessary when the gateway runs behind
+	// a load balancer doing rolling deploys, where instances cycle under live
+	// traffic and dropped requests during shutdown are user-visible.
 
 	err = http.ListenAndServe(":8080", nil)
 	if err != nil {

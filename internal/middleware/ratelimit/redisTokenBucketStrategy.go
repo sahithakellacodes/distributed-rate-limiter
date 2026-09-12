@@ -3,55 +3,94 @@ package ratelimit
 import (
 	"context"
 	"fmt"
-	"time"
 
 	redis "github.com/sahithakellacodes/distributed-rate-limiter/internal/redis"
 )
 
 type RedisTokenBucketStrategy struct {
 	client *redis.Client
-	now    func() time.Time
 }
 
 func NewRedisTokenBucketStrategy(client *redis.Client) *RedisTokenBucketStrategy {
 	return &RedisTokenBucketStrategy{
 		client: client,
-		now:    time.Now,
 	}
 }
 
 var tokenBucketScript = redis.NewScript(`
-		local capacity = tonumber(ARGV[1])
-		local refillRate = tonumber(ARGV[2])
-		local currentTime = tonumber(ARGV[3])
+	local capacity = tonumber(ARGV[1])
+	local refillRate = tonumber(ARGV[2])
 
-		local bucketExists = redis.call("EXISTS", KEYS[1])
+	-- Use Redis' own clock so all gateway instances share the same time source.
+	-- TIME returns {seconds, microseconds}.
+	local redisTime = redis.call("TIME")
+	local currentTime =
+		tonumber(redisTime[1]) * 1000000 +
+		tonumber(redisTime[2])
 
-		if bucketExists == 0 then
-			redis.call("HSET", KEYS[1], "tokens", capacity, "lastRefill", currentTime)
-		end
+	local bucketExists = redis.call("EXISTS", KEYS[1])
 
-		local tokens = tonumber(redis.call("HGET", KEYS[1], "tokens"))
-		local lastRefill = tonumber(redis.call("HGET", KEYS[1], "lastRefill"))
+	if bucketExists == 0 then
+		redis.call(
+			"HSET",
+			KEYS[1],
+			"tokens",
+			capacity,
+			"lastRefill",
+			currentTime
+		)
+	end
 
-		local elapsed = currentTime - lastRefill
+	local tokens = tonumber(redis.call("HGET", KEYS[1], "tokens"))
+	local lastRefill = tonumber(redis.call("HGET", KEYS[1], "lastRefill"))
 
-		if elapsed > 0 then
-			tokens = math.min(tokens + elapsed * refillRate, capacity)
-		end
+	local elapsed = currentTime - lastRefill
 
-		if tokens >= 1 then
-			tokens = math.max(0, tokens - 1)
-			redis.call("HSET", KEYS[1], "tokens", tokens, "lastRefill", currentTime)
-			-- { allowed (1/0), remaining whole tokens, seconds until the next token (0 if allowed) }
-			return {1, math.floor(tokens), 0}
-		else
-			local secondsUntilNextToken = (1 - tokens) / refillRate / 1e9
-			redis.call("HSET", KEYS[1], "tokens", tokens, "lastRefill", currentTime)
-			-- { allowed (1/0), remaining whole tokens, seconds until the next token }
-			return {0, math.floor(tokens), math.ceil(secondsUntilNextToken)}
-		end
-	`)
+	if elapsed > 0 then
+		tokens = math.min(
+			tokens + elapsed * refillRate,
+			capacity
+		)
+		lastRefill = currentTime
+	end
+
+	if tokens >= 1 then
+		tokens = tokens - 1
+
+		redis.call(
+			"HSET",
+			KEYS[1],
+			"tokens",
+			tokens,
+			"lastRefill",
+			lastRefill
+		)
+
+		return {
+			1,
+			math.floor(tokens),
+			0
+		}
+	end
+
+	local secondsUntilNextToken =
+		(1 - tokens) / refillRate / 1000000
+
+	redis.call(
+		"HSET",
+		KEYS[1],
+		"tokens",
+		tokens,
+		"lastRefill",
+		lastRefill
+	)
+
+	return {
+		0,
+		math.floor(tokens),
+		math.ceil(secondsUntilNextToken)
+	}
+`)
 
 func (s *RedisTokenBucketStrategy) Check(
 	ctx context.Context,
@@ -61,20 +100,17 @@ func (s *RedisTokenBucketStrategy) Check(
 	redisKey := "ratelimit:tb:{" + identifier + "}"
 
 	capacity := float64(config.MaxRequestsPerWindow)
-	refillRate := capacity / float64(config.WindowSize.Nanoseconds())
-	currentTime := s.now().UnixNano()
+	refillRate := capacity / float64(config.WindowSize.Microseconds())
 
 	// KEYS[1] = redisKey
 	// ARGV[1] = capacity
 	// ARGV[2] = refillRate
-	// ARGV[3] = currentTime
 	result, err := s.client.RunScript(
 		ctx,
 		tokenBucketScript,
 		[]string{redisKey},
 		capacity,
 		refillRate,
-		currentTime,
 	)
 
 	if err != nil {

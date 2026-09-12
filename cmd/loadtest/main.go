@@ -1,227 +1,186 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	"github.com/sahithakellacodes/distributed-rate-limiter/internal/middleware/ratelimit"
 )
-
-// ─── Tunable constants ───────────────────────────────────────────────
-// Change these to match your docker-compose / gateway configuration.
 
 var (
-	gatewayURLs          = []string{"http://127.0.0.1:8080", "http://127.0.0.1:8082", "http://127.0.0.1:8083"}
-	apiKey               = "test-key-1"
-	concurrency          = 20       // number of worker goroutines
-	numWindows           = 3        // how many windows to run for
-	maxRequestsPerWindow = 100        // matches compose X_RATELIMIT_LIMIT
-	windowSize           = 10 * time.Second // matches gateway config
-)
-
-// clientID must match what InMemoryAuthStore resolves for apiKey.
-// test-key-1 → client-1
-const clientID = "client-1"
-
-// ─── Per-request result ──────────────────────────────────────────────
-
-type requestResult struct {
-	timestamp    time.Time // when the request was fired
-	gateway      string    // which gateway was hit
-	localAllowed bool      // what the in-process algorithm said
-	httpStatus   int       // what the distributed system returned (200 or 429)
-}
-
-// ─── Main ────────────────────────────────────────────────────────────
-
-func main() {
-	totalDuration := time.Duration(numWindows) * windowSize
-	deadline := time.Now().Add(totalDuration)
-	testStart := time.Now()
-
-	fmt.Println("=== Shared-State Load Test ===")
-	fmt.Printf("Config: maxRequests=%d, window=%s, concurrency=%d, windows=%d\n",
-		maxRequestsPerWindow, windowSize, concurrency, numWindows)
-	fmt.Printf("Gateways: %v\n", gatewayURLs)
-	fmt.Printf("Total duration: %s\n\n", totalDuration)
-
-	// The local strategy is a single instance shared across all goroutines.
-	// It is mutex-guarded internally so it is safe under concurrency.
-	// It represents "what one perfect single-process rate limiter would do".
-	//
-	// NOTE: The local strategy starts with a full bucket, same as Redis on a
-	// fresh key. If Redis already has state from a previous run (compose wasn't
-	// restarted), the distributed results will reflect that stale state while
-	// the local oracle starts fresh. For a clean comparison, restart compose or
-	// use a unique API key / client per run.
-	localStrategy := ratelimit.NewLocalTokenBucketStrategy()
-
-	config := ratelimit.RateLimitConfig{
-		MaxRequestsPerWindow: maxRequestsPerWindow,
-		WindowSize:           windowSize,
+	gatewayURLs = []string{
+		"http://127.0.0.1:8080",
+		"http://127.0.0.1:8082",
+		"http://127.0.0.1:8083",
 	}
 
-	httpClient := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
-		MaxIdleConns: 100,
-		MaxIdleConnsPerHost: 50,
-		IdleConnTimeout: 90 * time.Second,
-	}}
+	apiKey         = "test-key-1"
+	concurrency    = 20
+	totalRequests  = 100000
+	bucketCapacity = 100
+	windowSize     = 10 * time.Second
+)
 
-	// Each goroutine collects results in its own slice to avoid lock
-	// contention during the hot loop. Slices are merged after completion.
-	var wg sync.WaitGroup
-	perWorker := make([][]requestResult, concurrency)
+type stats struct {
+	total   atomic.Int64
+	allowed atomic.Int64
+	denied  atomic.Int64
+	errors  atomic.Int64
+}
 
-	for i := range concurrency {
+func main() {
+	fmt.Println("=== Distributed Rate Limiter Fixed-Count Load Test ===")
+	fmt.Printf("Total requests: %d\n", totalRequests)
+	fmt.Printf("Concurrency:    %d\n", concurrency)
+	fmt.Printf("Bucket:         %d requests / %s\n", bucketCapacity, windowSize)
+	fmt.Printf(
+		"Refill rate:    %.2f tokens/sec\n",
+		float64(bucketCapacity)/windowSize.Seconds(),
+	)
+	fmt.Printf("Gateways:       %v\n\n", gatewayURLs)
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        concurrency * 2,
+			MaxIdleConnsPerHost: concurrency * 2,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	var (
+		wg sync.WaitGroup
+		s  stats
+	)
+
+	start := time.Now()
+
+	// Split exactly totalRequests across the workers.
+	baseRequests := totalRequests / concurrency
+	remainder := totalRequests % concurrency
+
+	for workerID := 0; workerID < concurrency; workerID++ {
 		wg.Add(1)
-		perWorker[i] = make([]requestResult, 0, 1024)
 
-		go func(workerID int) {
+		workerRequests := baseRequests
+		if workerID < remainder {
+			workerRequests++
+		}
+
+		go func(id, requestCount int) {
 			defer wg.Done()
 
-			for time.Now().Before(deadline) {
-				// Pick a random gateway per request.
-				gw := gatewayURLs[rand.Intn(len(gatewayURLs))]
+			// Independent random source for each worker.
+			rng := rand.New(
+				rand.NewSource(int64(id) + time.Now().UnixNano()),
+			)
 
-				// ── Local oracle check ──
-				localResult, _ := localStrategy.Check(context.Background(), clientID, config)
+			for i := 0; i < requestCount; i++ {
+				gateway := gatewayURLs[rng.Intn(len(gatewayURLs))]
 
-				// ── Distributed check (HTTP) ──
-				ts := time.Now()
-				status := sendRequest(httpClient, gw, apiKey)
+				status := sendRequest(
+					client,
+					gateway,
+					apiKey,
+				)
 
-				perWorker[workerID] = append(perWorker[workerID], requestResult{
-					timestamp:    ts,
-					gateway:      gw,
-					localAllowed: localResult.Allowed,
-					httpStatus:   status,
-				})
-				// No sleep — continuous pressure.
+				s.total.Add(1)
+
+				switch status {
+				case http.StatusOK:
+					s.allowed.Add(1)
+
+				case http.StatusTooManyRequests:
+					s.denied.Add(1)
+
+				default:
+					s.errors.Add(1)
+				}
 			}
-		}(i)
+		}(workerID, workerRequests)
 	}
 
 	wg.Wait()
 
-	// ── Merge all per-worker slices ──
-	var results []requestResult
-	for _, ws := range perWorker {
-		results = append(results, ws...)
-	}
+	elapsed := time.Since(start)
 
-	// ── Bucket into windows and print histograms ──
-	printHistograms(results, testStart)
+	total := s.total.Load()
+	allowed := s.allowed.Load()
+	denied := s.denied.Load()
+	errors := s.errors.Load()
+
+	refillRate := float64(bucketCapacity) / windowSize.Seconds()
+
+	// Theoretical token budget over the actual duration:
+	//
+	//   initial capacity + refill_rate * elapsed
+	//
+	// Keep everything as int64 because the atomic counters return int64.
+	theoreticalBudget := int64(bucketCapacity) +
+		int64(elapsed.Seconds()*refillRate)
+
+	fmt.Println("=== Results ===")
+	fmt.Printf("Duration:             %s\n", elapsed)
+	fmt.Printf("Total requests:       %d\n", total)
+	fmt.Printf("Allowed (200):        %d\n", allowed)
+	fmt.Printf("Denied (429):         %d\n", denied)
+	fmt.Printf("Errors:               %d\n", errors)
+	fmt.Printf(
+		"Throughput:           %.0f req/sec\n",
+		float64(total)/elapsed.Seconds(),
+	)
+	fmt.Printf(
+		"Allow rate:           %.2f%%\n",
+		float64(allowed)/float64(total)*100,
+	)
+	fmt.Printf(
+		"Deny rate:            %.2f%%\n",
+		float64(denied)/float64(total)*100,
+	)
+
+	fmt.Println()
+	fmt.Println("=== Token Budget ===")
+	fmt.Printf("Initial capacity:     %d\n", bucketCapacity)
+	fmt.Printf("Refill rate:          %.2f tokens/sec\n", refillRate)
+	fmt.Printf("Test duration:        %s\n", elapsed)
+	fmt.Printf("Theoretical budget:   %d\n", theoreticalBudget)
+	fmt.Printf("Actual allowed:       %d\n", allowed)
+
+	if allowed > theoreticalBudget {
+		fmt.Printf(
+			"⚠ EXCEEDED by %d requests\n",
+			allowed-theoreticalBudget,
+		)
+	} else {
+		fmt.Printf(
+			"✓ Within budget (headroom: %d)\n",
+			theoreticalBudget-allowed,
+		)
+	}
 }
 
-// ─── HTTP helper ─────────────────────────────────────────────────────
-
-// sendRequest fires a GET to gateway/products with the API key header.
-// Returns the HTTP status code, or -1 on error/timeout.
-func sendRequest(client *http.Client, gateway, key string) int {
-	req, err := http.NewRequest(http.MethodGet, gateway+"/products", nil)
+func sendRequest(client *http.Client, gateway, apiKey string) int {
+	req, err := http.NewRequest(
+		http.MethodGet,
+		gateway+"/products",
+		nil,
+	)
 	if err != nil {
 		return -1
 	}
-	req.Header.Set("X-API-Key", key)
+
+	req.Header.Set("X-API-Key", apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return -1
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+
 	return resp.StatusCode
-}
-
-// ─── Histogram / reporting ───────────────────────────────────────────
-
-type windowStats struct {
-	sent             int
-	algoAllowed      int
-	algoDenied       int
-	distAllowed      int
-	distDenied       int
-	distErrors       int
-}
-
-func printHistograms(results []requestResult, testStart time.Time) {
-	windows := make([]windowStats, numWindows)
-
-	for _, r := range results {
-		elapsed := r.timestamp.Sub(testStart)
-		idx := int(elapsed / windowSize)
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= numWindows {
-			idx = numWindows - 1
-		}
-
-		windows[idx].sent++
-
-		if r.localAllowed {
-			windows[idx].algoAllowed++
-		} else {
-			windows[idx].algoDenied++
-		}
-
-		switch {
-		case r.httpStatus == http.StatusOK:
-			windows[idx].distAllowed++
-		case r.httpStatus == http.StatusTooManyRequests:
-			windows[idx].distDenied++
-		default:
-			// Timeouts, connection errors, unexpected codes.
-			windows[idx].distErrors++
-		}
-	}
-
-	// ── Per-window output ──
-	fmt.Printf("\nConfig: maxRequests=%d, window=%s, concurrency=%d, windows=%d\n\n",
-		maxRequestsPerWindow, windowSize, concurrency, numWindows)
-
-	var totals windowStats
-
-	for i, w := range windows {
-		lo := time.Duration(i) * windowSize
-		hi := lo + windowSize
-
-		fmt.Printf("Window %d (%s–%s):\n", i+1, lo, hi)
-		fmt.Printf("  Sent: %d\n", w.sent)
-		fmt.Printf("  Algorithm:   allowed=%-6d denied=%d\n", w.algoAllowed, w.algoDenied)
-		fmt.Printf("  Distributed: allowed=%-6d denied=%d\n", w.distAllowed, w.distDenied)
-		if w.distErrors > 0 {
-			fmt.Printf("  Errors:      %d\n", w.distErrors)
-		}
-		fmt.Println()
-
-		totals.sent += w.sent
-		totals.algoAllowed += w.algoAllowed
-		totals.algoDenied += w.algoDenied
-		totals.distAllowed += w.distAllowed
-		totals.distDenied += w.distDenied
-		totals.distErrors += w.distErrors
-	}
-
-	// ── Totals ──
-	variance := totals.distAllowed - totals.algoAllowed
-
-	fmt.Println("Totals:")
-	fmt.Printf("  Sent: %d\n", totals.sent)
-	fmt.Printf("  Algorithm:   allowed=%-6d denied=%d\n", totals.algoAllowed, totals.algoDenied)
-	fmt.Printf("  Distributed: allowed=%-6d denied=%d\n", totals.distAllowed, totals.distDenied)
-	if totals.distErrors > 0 {
-		fmt.Printf("  Errors:      %d\n", totals.distErrors)
-	}
-
-	sign := "+"
-	if variance < 0 {
-		sign = ""
-	}
-	fmt.Printf("  Variance:    %s%d\n", sign, variance)
 }

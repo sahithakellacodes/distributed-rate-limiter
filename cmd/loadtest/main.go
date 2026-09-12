@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,8 +20,8 @@ var (
 	}
 
 	apiKey         = "test-key-1"
-	concurrency    = 2000
-	totalRequests  = 150000
+	concurrency    = 500
+	totalRequests  = 1500000
 	bucketCapacity = 100
 	windowSize     = 10 * time.Second
 )
@@ -36,7 +37,11 @@ func main() {
 	fmt.Println("=== Distributed Rate Limiter Fixed-Count Load Test ===")
 	fmt.Printf("Total requests: %d\n", totalRequests)
 	fmt.Printf("Concurrency:    %d\n", concurrency)
-	fmt.Printf("Bucket:         %d requests / %s\n", bucketCapacity, windowSize)
+	fmt.Printf(
+		"Bucket:         %d requests / %s\n",
+		bucketCapacity,
+		windowSize,
+	)
 	fmt.Printf(
 		"Refill rate:    %.2f tokens/sec\n",
 		float64(bucketCapacity)/windowSize.Seconds(),
@@ -57,13 +62,18 @@ func main() {
 		s  stats
 	)
 
-	// Keep latency data local to each worker. This avoids having all workers
-	// contend on one shared slice.
+	// Keep latency data local to each worker.
+	// This avoids lock contention during the hot path.
 	perWorkerLatencies := make([][]time.Duration, concurrency)
 
 	start := time.Now()
 
-	// Split exactly totalRequests across the workers.
+	// Progress reporter.
+	progressDone := make(chan struct{})
+
+	go reportProgress(&s, start, progressDone)
+
+	// Split exactly totalRequests across workers.
 	baseRequests := totalRequests / concurrency
 	remainder := totalRequests % concurrency
 
@@ -84,7 +94,6 @@ func main() {
 		go func(id, requestCount int) {
 			defer wg.Done()
 
-			// Independent random source for each worker.
 			rng := rand.New(
 				rand.NewSource(int64(id) + time.Now().UnixNano()),
 			)
@@ -125,7 +134,12 @@ func main() {
 
 	wg.Wait()
 
+	close(progressDone)
+
 	elapsed := time.Since(start)
+
+	// Print one final 100% progress line.
+	printProgress(&s, start, true)
 
 	total := s.total.Load()
 	allowed := s.allowed.Load()
@@ -134,10 +148,6 @@ func main() {
 
 	refillRate := float64(bucketCapacity) / windowSize.Seconds()
 
-	// Theoretical token budget over the actual duration:
-	//
-	//   initial capacity + refill_rate * elapsed
-	//
 	theoreticalBudget := int64(bucketCapacity) +
 		int64(elapsed.Seconds()*refillRate)
 
@@ -158,7 +168,10 @@ func main() {
 
 	throughput := float64(total) / elapsed.Seconds()
 
+	fmt.Println()
+	fmt.Println()
 	fmt.Println("=== Results ===")
+
 	fmt.Printf("Duration:             %s\n", elapsed)
 	fmt.Printf("Total requests:       %d\n", total)
 	fmt.Printf("Allowed (200):        %d\n", allowed)
@@ -198,7 +211,108 @@ func main() {
 	}
 }
 
-func sendRequest(client *http.Client, gateway, apiKey string) int {
+func reportProgress(
+	s *stats,
+	start time.Time,
+	done <-chan struct{},
+) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			printProgress(s, start, false)
+
+		case <-done:
+			return
+		}
+	}
+}
+
+func printProgress(
+	s *stats,
+	start time.Time,
+	final bool,
+) {
+	total := s.total.Load()
+	allowed := s.allowed.Load()
+	denied := s.denied.Load()
+	errors := s.errors.Load()
+
+	elapsed := time.Since(start)
+
+	if total > int64(totalRequests) {
+		total = int64(totalRequests)
+	}
+
+	percentage := float64(total) / float64(totalRequests)
+
+	const barWidth = 40
+
+	filled := int(percentage * barWidth)
+	if filled > barWidth {
+		filled = barWidth
+	}
+
+	bar := strings.Repeat("=", filled)
+
+	if filled < barWidth && !final {
+		bar += ">"
+		filled++
+	}
+
+	if filled < barWidth {
+		bar += strings.Repeat(" ", barWidth-filled)
+	}
+
+	throughput := 0.0
+
+	if elapsed > 0 {
+		throughput = float64(total) / elapsed.Seconds()
+	}
+
+	fmt.Printf(
+		"\r[%s] %6.2f%% | %7d / %d | %.0f req/s | allowed %d | 429 %d | errors %d | %s",
+		bar,
+		percentage*100,
+		total,
+		totalRequests,
+		throughput,
+		allowed,
+		denied,
+		errors,
+		formatDuration(elapsed),
+	)
+
+	if final {
+		fmt.Print("\n")
+	}
+}
+
+func formatDuration(d time.Duration) string {
+	totalSeconds := int(d.Seconds())
+
+	hours := totalSeconds / 3600
+	minutes := (totalSeconds % 3600) / 60
+	seconds := totalSeconds % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%02dh %02dm %02ds", hours, minutes, seconds)
+	}
+
+	if minutes > 0 {
+		return fmt.Sprintf("%02dm %02ds", minutes, seconds)
+	}
+
+	return fmt.Sprintf("%02ds", seconds)
+}
+
+func sendRequest(
+	client *http.Client,
+	gateway string,
+	apiKey string,
+) int {
 	req, err := http.NewRequest(
 		http.MethodGet,
 		gateway+"/products",
@@ -235,5 +349,6 @@ func percentile(sorted []time.Duration, p float64) time.Duration {
 	}
 
 	index := int(float64(len(sorted)-1) * p)
+
 	return sorted[index]
 }

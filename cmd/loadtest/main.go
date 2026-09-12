@@ -5,6 +5,7 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,8 +19,8 @@ var (
 	}
 
 	apiKey         = "test-key-1"
-	concurrency    = 20
-	totalRequests  = 100000
+	concurrency    = 2000
+	totalRequests  = 150000
 	bucketCapacity = 100
 	windowSize     = 10 * time.Second
 )
@@ -56,6 +57,10 @@ func main() {
 		s  stats
 	)
 
+	// Keep latency data local to each worker. This avoids having all workers
+	// contend on one shared slice.
+	perWorkerLatencies := make([][]time.Duration, concurrency)
+
 	start := time.Now()
 
 	// Split exactly totalRequests across the workers.
@@ -70,6 +75,12 @@ func main() {
 			workerRequests++
 		}
 
+		perWorkerLatencies[workerID] = make(
+			[]time.Duration,
+			0,
+			workerRequests,
+		)
+
 		go func(id, requestCount int) {
 			defer wg.Done()
 
@@ -81,10 +92,19 @@ func main() {
 			for i := 0; i < requestCount; i++ {
 				gateway := gatewayURLs[rng.Intn(len(gatewayURLs))]
 
+				requestStart := time.Now()
+
 				status := sendRequest(
 					client,
 					gateway,
 					apiKey,
+				)
+
+				latency := time.Since(requestStart)
+
+				perWorkerLatencies[id] = append(
+					perWorkerLatencies[id],
+					latency,
 				)
 
 				s.total.Add(1)
@@ -118,9 +138,25 @@ func main() {
 	//
 	//   initial capacity + refill_rate * elapsed
 	//
-	// Keep everything as int64 because the atomic counters return int64.
 	theoreticalBudget := int64(bucketCapacity) +
 		int64(elapsed.Seconds()*refillRate)
+
+	// Merge all worker latency slices.
+	latencies := make([]time.Duration, 0, totalRequests)
+
+	for _, workerLatencies := range perWorkerLatencies {
+		latencies = append(latencies, workerLatencies...)
+	}
+
+	sort.Slice(latencies, func(i, j int) bool {
+		return latencies[i] < latencies[j]
+	})
+
+	p50 := percentile(latencies, 0.50)
+	p95 := percentile(latencies, 0.95)
+	p99 := percentile(latencies, 0.99)
+
+	throughput := float64(total) / elapsed.Seconds()
 
 	fmt.Println("=== Results ===")
 	fmt.Printf("Duration:             %s\n", elapsed)
@@ -128,10 +164,10 @@ func main() {
 	fmt.Printf("Allowed (200):        %d\n", allowed)
 	fmt.Printf("Denied (429):         %d\n", denied)
 	fmt.Printf("Errors:               %d\n", errors)
-	fmt.Printf(
-		"Throughput:           %.0f req/sec\n",
-		float64(total)/elapsed.Seconds(),
-	)
+	fmt.Printf("Throughput:           %.0f req/sec\n", throughput)
+	fmt.Printf("P50 latency:          %s\n", p50)
+	fmt.Printf("P95 latency:          %s\n", p95)
+	fmt.Printf("P99 latency:          %s\n", p99)
 	fmt.Printf(
 		"Allow rate:           %.2f%%\n",
 		float64(allowed)/float64(total)*100,
@@ -183,4 +219,21 @@ func sendRequest(client *http.Client, gateway, apiKey string) int {
 	_ = resp.Body.Close()
 
 	return resp.StatusCode
+}
+
+func percentile(sorted []time.Duration, p float64) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+
+	if p <= 0 {
+		return sorted[0]
+	}
+
+	if p >= 1 {
+		return sorted[len(sorted)-1]
+	}
+
+	index := int(float64(len(sorted)-1) * p)
+	return sorted[index]
 }

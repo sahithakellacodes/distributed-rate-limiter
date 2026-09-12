@@ -4,4 +4,4 @@ set -e
 
 echo "Starting the gateway and backend services..."
 
-docker compose up --build
+docker compose down && docker compose up --build

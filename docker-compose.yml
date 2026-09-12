@@ -15,7 +15,7 @@ services:
       - REDIS_ADDR=redis:6379
       - HEALTH_CHECK_INTERVAL=3s
       - HEALTH_CHECK_CONSECUTIVE_POSITIVE=3
-      - X_RATELIMIT_LIMIT=5
+      - X_RATELIMIT_LIMIT=100
 
   gateway-2:
     build:
@@ -33,7 +33,7 @@ services:
       - REDIS_ADDR=redis:6379
       - HEALTH_CHECK_INTERVAL=3s
       - HEALTH_CHECK_CONSECUTIVE_POSITIVE=3
-      - X_RATELIMIT_LIMIT=5
+      - X_RATELIMIT_LIMIT=100
 
   gateway-3:
     build:
@@ -51,7 +51,7 @@ services:
       - REDIS_ADDR=redis:6379
       - HEALTH_CHECK_INTERVAL=3s
       - HEALTH_CHECK_CONSECUTIVE_POSITIVE=3
-      - X_RATELIMIT_LIMIT=5
+      - X_RATELIMIT_LIMIT=100
 
   backend:
     build:

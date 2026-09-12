@@ -47,7 +47,7 @@ var tokenBucketScript = redis.NewScript(`
 			return {1, math.floor(tokens), 0}
 		else
 			local secondsUntilNextToken = (1 - tokens) / refillRate / 1e9
-			redis.call("HSET", KEYS[1], "lastRefill", currentTime)
+			redis.call("HSET", KEYS[1], "tokens", tokens, "lastRefill", currentTime)
 			-- { allowed (1/0), remaining whole tokens, seconds until the next token }
 			return {0, math.floor(tokens), math.ceil(secondsUntilNextToken)}
 		end

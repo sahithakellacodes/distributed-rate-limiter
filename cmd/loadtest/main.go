@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"sync"
@@ -19,8 +20,8 @@ var (
 	apiKey               = "test-key-1"
 	concurrency          = 20       // number of worker goroutines
 	numWindows           = 3        // how many windows to run for
-	maxRequestsPerWindow = 5        // matches compose X_RATELIMIT_LIMIT
-	windowSize           = 60 * time.Second // matches gateway config
+	maxRequestsPerWindow = 100        // matches compose X_RATELIMIT_LIMIT
+	windowSize           = 10 * time.Second // matches gateway config
 )
 
 // clientID must match what InMemoryAuthStore resolves for apiKey.
@@ -65,7 +66,11 @@ func main() {
 		WindowSize:           windowSize,
 	}
 
-	httpClient := &http.Client{Timeout: 5 * time.Second}
+	httpClient := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{
+		MaxIdleConns: 100,
+		MaxIdleConnsPerHost: 50,
+		IdleConnTimeout: 90 * time.Second,
+	}}
 
 	// Each goroutine collects results in its own slice to avoid lock
 	// contention during the hot loop. Slices are merged after completion.
@@ -128,6 +133,7 @@ func sendRequest(client *http.Client, gateway, key string) int {
 	if err != nil {
 		return -1
 	}
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 	return resp.StatusCode
 }

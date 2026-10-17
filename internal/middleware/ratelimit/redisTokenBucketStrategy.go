@@ -20,6 +20,8 @@ func NewRedisTokenBucketStrategy(client *redis.Client) *RedisTokenBucketStrategy
 var tokenBucketScript = redis.NewScript(`
 	local capacity = tonumber(ARGV[1])
 	local refillRate = tonumber(ARGV[2])
+	local windowSeconds = tonumber(ARGV[3])
+	local epsilon = 1e-9
 
 	-- Use Redis' own clock so all gateway instances share the same time source.
 	-- TIME returns {seconds, microseconds}.
@@ -54,27 +56,16 @@ var tokenBucketScript = redis.NewScript(`
 		lastRefill = currentTime
 	end
 
-	if tokens >= 1 then
-		tokens = tokens - 1
+	local allowed = 0
+	local secondsUntilNextToken = 0
 
-		redis.call(
-			"HSET",
-			KEYS[1],
-			"tokens",
-			tokens,
-			"lastRefill",
-			lastRefill
-		)
-
-		return {
-			1,
-			math.floor(tokens),
-			0
-		}
+	if tokens >= 1 - epsilon then
+		tokens = math.max(0, tokens - 1)
+		allowed = 1
+	else
+		secondsUntilNextToken =
+			math.ceil((1 - tokens) / refillRate / 1000000)
 	end
-
-	local secondsUntilNextToken =
-		(1 - tokens) / refillRate / 1000000
 
 	redis.call(
 		"HSET",
@@ -85,10 +76,12 @@ var tokenBucketScript = redis.NewScript(`
 		lastRefill
 	)
 
+	redis.call("EXPIRE", KEYS[1], windowSeconds * 2)
+
 	return {
-		0,
+		allowed,
 		math.floor(tokens),
-		math.ceil(secondsUntilNextToken)
+		secondsUntilNextToken
 	}
 `)
 
@@ -101,16 +94,19 @@ func (s *RedisTokenBucketStrategy) Check(
 
 	capacity := float64(config.MaxRequestsPerWindow)
 	refillRate := capacity / float64(config.WindowSize.Microseconds())
+	windowSeconds := int(config.WindowSize.Seconds())
 
 	// KEYS[1] = redisKey
 	// ARGV[1] = capacity
 	// ARGV[2] = refillRate
+	// ARGV[3] = windowSeconds
 	result, err := s.client.RunScript(
 		ctx,
 		tokenBucketScript,
 		[]string{redisKey},
 		capacity,
 		refillRate,
+		windowSeconds,
 	)
 
 	if err != nil {

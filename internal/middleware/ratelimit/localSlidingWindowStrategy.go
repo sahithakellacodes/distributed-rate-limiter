@@ -8,45 +8,48 @@ import (
 )
 
 type SlidingWindow struct {
+	mu                     sync.Mutex
 	currentWindowStartTime time.Time // The start time of the current window
 	currentWindowCount     int       // The number of requests in the current window
 	previousWindowCount    int       // The number of requests in the previous window
 }
 
 type LocalSlidingWindowStrategy struct {
-	mutex   sync.Mutex                // Mutex to ensure thread-safe access to the windows map
-	windows map[string]*SlidingWindow // Map to store sliding windows for each identifier (e.g., client ID)
-	now     func() time.Time          // Function to get the current time, can be overridden for testing
+	windows sync.Map         // map[string]*SlidingWindow — per-client sliding windows
+	now     func() time.Time // Function to get the current time, can be overridden for testing
 }
 
 func NewLocalSlidingWindowStrategy() *LocalSlidingWindowStrategy {
 	return &LocalSlidingWindowStrategy{
-		windows: make(map[string]*SlidingWindow),
-		now:     time.Now,
+		now: time.Now,
 	}
 }
 
 func (s *LocalSlidingWindowStrategy) Check(_ context.Context, identifier string, config RateLimitConfig) (RateLimitResult, error) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
 	now := s.now()
-	window, exists := s.windows[identifier]
 
-	// Create window if window doesn't exist
-	if !exists {
-		window = &SlidingWindow{
+	// Load or lazily create the per-client window. LoadOrStore is atomic, so
+	// two goroutines hitting a new client ID simultaneously both get the same
+	// *SlidingWindow back — only one allocation survives.
+	val, loaded := s.windows.Load(identifier)
+	if !loaded {
+		newWindow := &SlidingWindow{
 			currentWindowStartTime: now,
 			currentWindowCount:     0,
 			previousWindowCount:    0,
 		}
-		s.windows[identifier] = window
+		val, _ = s.windows.LoadOrStore(identifier, newWindow)
 	}
+	window := val.(*SlidingWindow)
+
+	// Only requests for this client contend on this lock.
+	window.mu.Lock()
+	defer window.mu.Unlock()
 
 	// Check if the current window has expired
 	timeElapsedSinceWindowStart := now.Sub(window.currentWindowStartTime)
 	if timeElapsedSinceWindowStart >= config.WindowSize {
-		elapsedWindows:= timeElapsedSinceWindowStart / config.WindowSize
+		elapsedWindows := timeElapsedSinceWindowStart / config.WindowSize
 		if elapsedWindows >= 2 {
 			window.previousWindowCount = 0
 		} else {

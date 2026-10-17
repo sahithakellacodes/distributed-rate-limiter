@@ -98,7 +98,7 @@ func main() {
 	loggerStrategy := logger.NewDefaultLoggerStrategy()
 	localTokenBucketStrategy := ratelimit.NewLocalTokenBucketStrategy()
 	redisTokenBucketStrategy := ratelimit.NewRedisTokenBucketStrategy(redisClient)
-	rateLimitStrategy := ratelimit.NewResilientWrapper(redisTokenBucketStrategy, localTokenBucketStrategy, healthChecker)
+	rateLimitStrategy := ratelimit.NewResilientWrapper(redisTokenBucketStrategy, localTokenBucketStrategy, healthChecker, loggerStrategy)
 	httpClient := router.NewDefaultHttpClient()
 
 	// Create middlewares

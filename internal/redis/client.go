@@ -32,6 +32,10 @@ func NewScript(src string) *Script {
 	}
 }
 
+func (c *Client) Del(ctx context.Context, keys ...string) error {
+	return c.client.Del(ctx, keys...).Err()
+}
+
 func (c *Client) RunScript(
 	ctx context.Context,
 	script *Script,

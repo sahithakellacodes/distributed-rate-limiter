@@ -44,6 +44,8 @@ func TestRedisTokenBucketStrategy_AllowThenDeny(t *testing.T) {
 	}
 
 	identifier := fmt.Sprintf("allowdeny-%d", time.Now().UnixNano())
+	redisKey := "ratelimit:tb:{" + identifier + "}"
+	defer client.Del(context.Background(), redisKey)
 
 	// First `limit` requests must all be allowed.
 	for i := 1; i <= limit; i++ {
@@ -87,6 +89,8 @@ func TestRedisTokenBucketStrategy_Concurrent(t *testing.T) {
 	// Unique identifier so this test starts from a fresh bucket regardless of
 	// leftover state from other runs.
 	identifier := fmt.Sprintf("concurrent-%d", time.Now().UnixNano())
+	redisKey := "ratelimit:tb:{" + identifier + "}"
+	defer client.Del(context.Background(), redisKey)
 
 	// Per-goroutine result slots indexed by goroutine number. Each goroutine
 	// writes only to its own index, so there's no shared mutation and no lock

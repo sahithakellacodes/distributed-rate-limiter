@@ -31,6 +31,46 @@ func newTestRedisClient(t *testing.T) *redis.Client {
 	return client
 }
 
+func TestRedisTokenBucketStrategy_AllowThenDeny(t *testing.T) {
+	client := newTestRedisClient(t)
+
+	strategy := NewRedisTokenBucketStrategy(client)
+
+	const limit = 5
+
+	config := RateLimitConfig{
+		MaxRequestsPerWindow: limit,
+		WindowSize:           time.Hour, // large window so no refill during test
+	}
+
+	identifier := fmt.Sprintf("allowdeny-%d", time.Now().UnixNano())
+
+	// First `limit` requests must all be allowed.
+	for i := 1; i <= limit; i++ {
+		result, err := strategy.Check(context.Background(), identifier, config)
+		if err != nil {
+			t.Fatalf("request %d: unexpected error: %v", i, err)
+		}
+		if !result.Allowed {
+			t.Fatalf("request %d: expected allowed, got denied (remaining=%d)", i, result.Remaining)
+		}
+		t.Logf("request %d: allowed, remaining=%d", i, result.Remaining)
+	}
+
+	// The very next request must be denied.
+	result, err := strategy.Check(context.Background(), identifier, config)
+	if err != nil {
+		t.Fatalf("request %d: unexpected error: %v", limit+1, err)
+	}
+	if result.Allowed {
+		t.Fatalf("request %d: expected denied, but was allowed (remaining=%d)", limit+1, result.Remaining)
+	}
+	if result.RetryAfterSeconds <= 0 {
+		t.Errorf("request %d: denied but RetryAfterSeconds=%d, expected > 0", limit+1, result.RetryAfterSeconds)
+	}
+	t.Logf("request %d: denied as expected, retryAfter=%ds", limit+1, result.RetryAfterSeconds)
+}
+
 func TestRedisTokenBucketStrategy_Concurrent(t *testing.T) {
 	client := newTestRedisClient(t)
 

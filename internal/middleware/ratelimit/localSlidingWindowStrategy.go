@@ -26,15 +26,13 @@ func NewLocalSlidingWindowStrategy() *LocalSlidingWindowStrategy {
 }
 
 func (s *LocalSlidingWindowStrategy) Check(_ context.Context, identifier string, config RateLimitConfig) (RateLimitResult, error) {
-	now := s.now()
-
 	// Load or lazily create the per-client window. LoadOrStore is atomic, so
 	// two goroutines hitting a new client ID simultaneously both get the same
 	// *SlidingWindow back — only one allocation survives.
 	val, loaded := s.windows.Load(identifier)
 	if !loaded {
 		newWindow := &SlidingWindow{
-			currentWindowStartTime: now,
+			currentWindowStartTime: s.now(),
 			currentWindowCount:     0,
 			previousWindowCount:    0,
 		}
@@ -47,7 +45,7 @@ func (s *LocalSlidingWindowStrategy) Check(_ context.Context, identifier string,
 	defer window.mu.Unlock()
 
 	// Check if the current window has expired
-	timeElapsedSinceWindowStart := now.Sub(window.currentWindowStartTime)
+	timeElapsedSinceWindowStart := s.now().Sub(window.currentWindowStartTime)
 	if timeElapsedSinceWindowStart >= config.WindowSize {
 		elapsedWindows := timeElapsedSinceWindowStart / config.WindowSize
 		if elapsedWindows >= 2 {
@@ -61,7 +59,7 @@ func (s *LocalSlidingWindowStrategy) Check(_ context.Context, identifier string,
 		)
 	}
 
-	fractionOfPreviousWindow := 1.0 - (float64(now.Sub(window.currentWindowStartTime)) / float64(config.WindowSize))
+	fractionOfPreviousWindow := 1.0 - (float64(s.now().Sub(window.currentWindowStartTime)) / float64(config.WindowSize))
 	consumedCount := float64(window.previousWindowCount)*fractionOfPreviousWindow + float64(window.currentWindowCount)
 	remainingRequestsCount := float64(config.MaxRequestsPerWindow) - consumedCount
 
@@ -73,7 +71,7 @@ func (s *LocalSlidingWindowStrategy) Check(_ context.Context, identifier string,
 			retryAfterSeconds = int(math.Ceil(previousWindowSeconds / float64(window.previousWindowCount)))
 		} else {
 			retryAfterSeconds = int(math.Ceil(
-				window.currentWindowStartTime.Add(config.WindowSize).Sub(now).Seconds(),
+				window.currentWindowStartTime.Add(config.WindowSize).Sub(s.now()).Seconds(),
 			))
 		}
 
